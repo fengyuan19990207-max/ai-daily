@@ -62,7 +62,7 @@ cat > "$AGENTS/com.dsh.aidaily.refresh.plist" <<EOF
     </array>
     <key>WorkingDirectory</key><string>$BASE</string>
     <key>RunAtLoad</key><true/>
-    <key>StartInterval</key><integer>3600</integer>
+    <key>StartInterval</key><integer>7200</integer>
     <key>StandardOutPath</key><string>$BASE/logs/refresh.out.log</string>
     <key>StandardErrorPath</key><string>$BASE/logs/refresh.err.log</string>
     <key>EnvironmentVariables</key>
@@ -89,7 +89,6 @@ cat > "$AGENTS/com.dsh.aidaily.notify.plist" <<EOF
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
     </array>
     <key>StandardOutPath</key><string>$BASE/logs/notify.out.log</string>
     <key>StandardErrorPath</key><string>$BASE/logs/notify.err.log</string>
@@ -151,7 +150,7 @@ echo " 公网地址 : $(cat "$BASE/state/tunnel_url.txt" 2>/dev/null || echo 稍
 echo " RSS 订阅 : http://$LAN_IP:8787/feed.xml"
 echo ""
 echo " 手机加到主屏：Safari 打开上面的地址 → 分享 → 添加到主屏幕"
-echo " 数据每小时自动刷新；每天 08:00 / 20:30 弹一次通知提醒"
+echo " 数据每小时自动刷新；每天 08:00 弹一次通知提醒"
 echo ""
 echo " 状态：launchctl print gui/$UID_NUM/com.dsh.aidaily.serve | head -12"
 echo " 日志：$BASE/logs/"

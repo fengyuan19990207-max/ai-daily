@@ -159,6 +159,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/feed.xml":
             return self.send_file(OUT / "feed.xml", cache="max-age=600")
 
+        if path == "/kb" or path == "/kb/":
+            return self.send_file(OUT / "kb" / "index.html", cache="max-age=300")
+
+        m2 = re.fullmatch(r"/kb/(20\d\d-\d\d-\d\d)", path)
+        if m2:
+            target = OUT / "kb" / (m2.group(1) + ".html")
+            if not target.is_file():
+                return self.not_found()
+            return self.send_file(target, cache="max-age=3600")
+
         if path == "/sources":
             return self.send_file(OUT / "sources.html", cache="max-age=600")
 

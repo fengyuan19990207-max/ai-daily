@@ -1284,15 +1284,24 @@ code{background:var(--card2);padding:1px 6px;border-radius:5px;font-size:10.5px;
 
 
 
+def label_of(key):
+    for k, label, _ in TOPICS:
+        if k == key:
+            return label
+    return "其他"
+
+
 def card(title, body, tag=""):
     t = '<span class="tag">%s</span>' % E(tag) if tag else ""
     return '<div class="card"><h3><span>%s</span>%s</h3>%s</div>' % (E(title), t, body)
 
 
 def render(headlines, aa, or_new, hn, reddit, gh, hf, ph, papers, zh, status,
-           hot_cn=None, tr=None):
+           hot_cn=None, tr=None, kb=None, kb_drop=None):
     tr = tr or {}
     hot_cn = hot_cn or []
+    kb = kb or {}
+    kb_drop = kb_drop or {}
 
     def bi(text, url):
         """外文标题：中文在上、原文小字在下；中文内容原样。"""
@@ -1475,6 +1484,25 @@ def render(headlines, aa, or_new, hn, reddit, gh, hf, ph, papers, zh, status,
     if not zh_html:
         zh_html = '<p style="color:#8b98b0">暂无</p>'
 
+    kb_count = sum(len(v) for v in kb.values())
+    kb_cells = ""
+    for key, _label, _kws in TOPICS:
+        items = kb.get(key) or []
+        if not items:
+            continue
+        rows = ""
+        for it in items[:4]:
+            tags = "".join('<span class="badge">%s</span>' % E(t) for t in it.get("tags", []))
+            rows += ('<div class="item"><div><div class="n" style="font-size:13.5px">%s</div>'
+                     '<div class="m">%s · %s %s</div></div>'
+                     '<div class="r"><span class="badge up">%d</span></div></div>'
+                     % (bi(it["title"], it["url"]), E(it["source"]),
+                        E(ago(it.get("published"))), tags, it.get("score", 0)))
+        kb_cells += card(label_of(key), rows, "%d 条" % len(items))
+    if not kb_cells:
+        kb_cells = card("今日知识库", '<p style="color:#8b98b0">今天没有达到阈值的条目</p>')
+    kb_html = '<div class="grid2">%s</div>' % kb_cells
+
     hot_html = ""
     if hot_cn:
         groups = {}
@@ -1498,7 +1526,7 @@ def render(headlines, aa, or_new, hn, reddit, gh, hf, ph, papers, zh, status,
         hot_html = card("中文热榜", '<p style="color:#8b98b0">各平台接口暂时不可达，'
                                     '下一轮会自动重试。</p>')
 
-    nav_items = [("s-news", "🔥 要闻"), ("s-model", "📊 模型"),
+    nav_items = [("s-news", "🔥 要闻"), ("s-kb", "📚 知识库"), ("s-model", "📊 模型"),
                  ("s-comm", "🗣️ 社区"), ("s-hotcn", "🇨🇳 热榜"),
                  ("s-open", "🚀 开源"), ("s-tool", "🧰 工具"),
                  ("s-paper", "📄 论文")]
@@ -1539,6 +1567,12 @@ def render(headlines, aa, or_new, hn, reddit, gh, hf, ph, papers, zh, status,
 <section id="s-news"><h2>🔥 今日要闻 <span class="tag">跨源加权 · 近 %(hh)s 小时</span></h2>
 <div class="card"><ol class="top">%(head)s</ol></div></section>
 
+<section id="s-kb"><h2>📚 今日知识库 <span class="tag">已过滤 %(drop)d 条噪音 · 保留 %(keep)d 条</span></h2>
+%(kb_card)s
+<div style="margin-top:10px" class="hub"><a href="/kb/">查看历史知识库 →</a>
+<a href="/kb/%(today)s">本日完整版</a></div>
+</section>
+
 <section id="s-model"><h2>📊 模型战力榜 <span class="tag">Artificial Analysis 智能指数</span></h2>
 <div class="grid2">%(c_aa)s%(c_val)s</div>
 <div style="margin-top:14px">%(c_new)s</div>
@@ -1576,6 +1610,7 @@ def render(headlines, aa, or_new, hn, reddit, gh, hf, ph, papers, zh, status,
 </div>
 <div class="tabbar">
   <a href="#s-news" data-t="s-news"><span class="i">🔥</span>要闻</a>
+  <a href="#s-kb" data-t="s-kb"><span class="i">📚</span>知识库</a>
   <a href="#s-model" data-t="s-model"><span class="i">📊</span>模型</a>
   <a href="#s-hotcn" data-t="s-hotcn"><span class="i">🇨🇳</span>热榜</a>
   <a href="#s-tool" data-t="s-tool"><span class="i">🧰</span>工具</a>
@@ -1636,6 +1671,9 @@ q.addEventListener('input',function(){
         "lan": LAN_IP,
         "pub": PUBLIC_URL or "未启用（手机用流量看需要它）",
         "nav": nav,
+        "kb_card": kb_html,
+        "drop": sum(kb_drop.values()) if kb_drop else 0,
+        "keep": kb_count,
         "c_hotcn": hot_html,
     }
 
@@ -1724,6 +1762,242 @@ a{color:#5b8cff;text-decoration:none}
 
 
 # ---------------------------------------------------------------------------
+# 信息过滤 + 知识库沉淀
+# ---------------------------------------------------------------------------
+# 越"前沿"的词权重越高
+FRONTIER_KW = {
+    "sota": 3, "benchmark": 2, "release": 2, "open-source": 2, "开源": 3,
+    "发布": 3, "推出": 2, "上线": 2, "agent": 3, "agents": 3, "智能体": 3,
+    "reasoning": 3, "推理": 3, "multimodal": 3, "多模态": 3, "moe": 3,
+    "context": 2, "长上下文": 2, "fine-tune": 2, "微调": 2, "rlhf": 2,
+    "gpu": 2, "tpu": 2, "算力": 2, "chip": 2, "芯片": 2, "h100": 2, "b200": 2,
+    "模型": 2, "model": 1, "论文": 2, "arxiv": 2, "精度": 2, "量化": 2,
+    "anthropic": 2, "openai": 2, "deepseek": 2, "gemini": 2, "claude": 2,
+    "llama": 2, "qwen": 2, "mistral": 2, "kimi": 2, "glm": 2,
+    "tool": 2, "工具": 2, "cli": 2, "sdk": 2, "插件": 2, "workflow": 2,
+}
+# 标题党 / 软文：直接降权
+PROMO_KW = ["震惊", "必看", "炸裂", "一文读懂", "一文看懂", "干货", "福利", "限时",
+            "免费领", "速看", "揭秘", "内幕", "重磅", "史上最", "彻底改变", "颠覆"]
+# 招聘 / 课程 / 活动：直接过滤
+SPAM_KW = ["招聘", "训练营", "报名", "优惠", "折扣", "直播预告", "邀请函",
+           "线下活动", "议程公布", "扫码报名", "招商加盟"]
+
+TOPICS = [
+    ("model", "模型发布", ["发布", "推出", "上线", "release", "launch", "announce",
+                          "preview", "正式版", "开源模型", "新模型", "版本"]),
+    ("bench", "能力与评测", ["benchmark", "sota", "elo", "榜单", "评测", "得分",
+                            "超越", "领先", "刷新", "record"]),
+    ("tool", "工具与方案", ["工具", "cli", "sdk", "插件", "agent", "工作流",
+                           "workflow", "集成", "integration", "api", "mcp"]),
+    ("paper", "研究前沿", ["paper", "arxiv", "论文", "研究", "理论", "prove",
+                          "experiment", "实验"]),
+    ("oss", "开源生态", ["github", "hugging face", "repo", "开源", "star", "社区"]),
+    ("infra", "算力与硬件", ["gpu", "tpu", "芯片", "chip", "算力", "集群",
+                            "data center", "数据中心", "显存", "内存"]),
+    ("biz", "商业与资本", ["融资", "估值", "ipo", "收购", "acquisition", "funding",
+                          "营收", "revenue", "定价", "pricing"]),
+    ("policy", "政策与安全", ["监管", "政策", "法案", "regulation", "安全", "隐私",
+                             "ban", "诉讼", "lawsuit", "合规"]),
+]
+TOPIC_LABEL = {k: label for k, label, _ in TOPICS}
+
+
+def classify(text):
+    t = (text or "").lower()
+    best, best_hits = "other", 0
+    for key, _label, kws in TOPICS:
+        hits = sum(1 for k in kws if k in t)
+        if hits > best_hits:
+            best, best_hits = key, hits
+    return best if best_hits else "other"
+
+
+def quality(item):
+    """0-100 的价值分：前沿性(密度归一) + 共振 + 社区热度 - 标题党 - 垃圾。"""
+    title = item.get("title") or ""
+    t = (title + " " + (item.get("summary") or "")).lower()
+    hits = sum(w for k, w in FRONTIER_KW.items() if k in t)
+    words = max(6, len(t.split()))
+    density = hits / words * 10.0          # 0~2 左右
+    q = 26.0 + min(48.0, density * 30.0)
+    if len(title) < 14:
+        q -= 8.0                            # 标题太短多半没信息
+    if re.search(r"\[(D|讨论|闲聊)\]|^\W*$", title):
+        q -= 30.0
+    q += min(18.0, 9.0 * (len(item.get("sources") or [item.get("source", "")]) - 1))
+    if any(k in t for k in PROMO_KW):
+        q -= 34
+    if any(k in t for k in SPAM_KW):
+        q -= 60
+    if item.get("kind") == "hn":
+        q += min(16.0, (item.get("points") or 0) / 55.0)
+    elif item.get("kind") == "reddit":
+        q += max(0.0, (9 - item.get("rank", 9)) * 2.0)
+    if (item.get("weight") or 0) >= 36:
+        q += 12
+    return max(0.0, min(100.0, q))
+
+
+def filter_knowledge(items, threshold=55.0, max_paper=2, per_topic=4):
+    """返回 (保留条目, 丢弃统计)。论文单独限量，避免知识库变成论文列表。"""
+    kept, dropped = [], {"spam": 0, "promo": 0, "low": 0, "paper": 0}
+    for it in items:
+        t = ((it.get("title") or "") + " " + (it.get("summary") or "")).lower()
+        if any(k in t for k in SPAM_KW):
+            dropped["spam"] += 1
+            continue
+        sc = quality(it)
+        if sc < threshold:
+            if any(k in t for k in PROMO_KW):
+                dropped["promo"] += 1
+            else:
+                dropped["low"] += 1
+            continue
+        it = dict(it)
+        it["score"] = round(sc)
+        it["topic"] = classify(it.get("title") + " " + it.get("summary"))
+        it["tags"] = []
+        if len(it.get("sources") or []) > 1:
+            it["tags"].append("多源共振")
+        if (it.get("weight") or 0) >= 36:
+            it["tags"].append("官方")
+        if it.get("kind") == "hn":
+            it["tags"].append("HN 热门")
+        it["_is_paper"] = (it.get("source_id") == "arxiv"
+                           or it.get("topic") == "paper")
+        kept.append(it)
+
+    kept.sort(key=lambda x: -(x.get("score") or 0))
+
+    # 同一事件不同标题再合并（保留分高的）
+    deduped = []
+    for it in kept:
+        dup = next((k for k in deduped if similar(k["title"], it["title"])), None)
+        if dup:
+            dup["tags"] = sorted(set(dup.get("tags", []) + it.get("tags", [])))
+            dropped["low"] += 1
+            continue
+        deduped.append(it)
+    kept = deduped
+
+    # 论文最多 N 条
+    out, papers, per = [], 0, {}
+    for it in kept:
+        if it.get("_is_paper"):
+            if papers >= max_paper:
+                dropped["paper"] += 1
+                continue
+            papers += 1
+        n = per.get(it["topic"], 0)
+        if n >= per_topic:
+            dropped["low"] += 1
+            continue
+        per[it["topic"]] = n + 1
+        out.append(it)
+    return out, dropped
+
+
+def write_knowledge(kept, dropped, headlines):
+    """同时产出 Markdown（给 Obsidian/iCloud）和一块可读的 HTML。"""
+    kb_md = BASE / "knowledge"
+    kb_html = OUT / "kb"
+    kb_md.mkdir(exist_ok=True)
+    kb_html.mkdir(exist_ok=True)
+
+    groups = {}
+    for it in kept:
+        groups.setdefault(it["topic"], []).append(it)
+
+    order = [k for k, _l, _k in TOPICS] + ["other"]
+    total_in = len(kept) + sum(dropped.values())
+
+    # ---------- Markdown ----------
+    md = ["# %s · AI 前沿速览" % TODAY, "",
+          "> 抓取 %d 条，过滤掉 %d 条（垃圾 %d / 标题党 %d / 低价值 %d），保留 %d 条。"
+          % (total_in, sum(dropped.values()), dropped["spam"], dropped["promo"],
+             dropped["low"], len(kept)), ""]
+    for key in order:
+        items = groups.get(key)
+        if not items:
+            continue
+        md.append("## %s" % TOPIC_LABEL.get(key, "其他"))
+        md.append("")
+        for it in items:
+            tags = " ".join("#" + t.replace(" ", "") for t in it.get("tags", []))
+            md.append("- [%s](%s) — %s %s" % (it["title"], it["url"], it["source"], tags))
+        md.append("")
+    (kb_md / (TODAY + ".md")).write_text("\n".join(md), encoding="utf-8")
+
+    # ---------- HTML ----------
+    blocks = ""
+    for key in order:
+        items = groups.get(key)
+        if not items:
+            continue
+        rows = ""
+        for it in items:
+            tags = "".join('<span class="b">%s</span>' % E(t) for t in it.get("tags", []))
+            rows += ('<div class="row"><div class="rt">%s</div>'
+                     '<div class="rm">%s · %s %s</div></div>'
+                     % (rel(it["url"], it["title"]), E(it["source"]),
+                        E(ago(it.get("published"))), tags))
+        blocks += '<section><h2>%s<span class="n">%d</span></h2>%s</section>' % (
+            E(TOPIC_LABEL.get(key, "其他")), len(items), rows)
+
+    page = """<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>知识库 · %(today)s</title>
+<style>
+:root{--bg:#0a0b0e;--card:#12141a;--fg:#eef1f7;--dim:#8d97a8;--dim2:#6b7486;--acc:#6d8fff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,"PingFang SC",sans-serif;padding:24px 18px 60px}
+.wrap{max-width:760px;margin:0 auto}
+h1{font-size:22px;margin:0 0 6px;letter-spacing:-.4px}
+.sub{color:var(--dim2);font-size:12.5px;margin-bottom:22px;line-height:1.7}
+h2{font-size:13px;color:var(--dim);margin:24px 0 8px;display:flex;gap:8px;align-items:center}
+h2 .n{font-size:11px;color:var(--dim2);background:var(--card);padding:1px 8px;border-radius:20px}
+section{background:var(--card);border-radius:16px;padding:6px 16px;margin-bottom:10px}
+.row{padding:11px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.row:last-child{border-bottom:0}
+.rt{font-size:15px;font-weight:600;line-height:1.45}
+.rm{font-size:11.5px;color:var(--dim2);margin-top:4px}
+.b{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:6px;background:#171a21;color:#a5b8ff;font-size:10.5px}
+a{color:inherit;text-decoration:none}
+a:active{opacity:.6}
+.top{color:var(--acc);font-size:12.5px;margin-bottom:18px;display:block}
+</style></head><body><div class="wrap">
+<h1>AI 知识库 · %(today)s</h1>
+<div class="sub">抓取 %(total)d 条，过滤 %(drop)d 条噪音，保留 %(keep)d 条。<br>
+判断口径：前沿性关键词权重 + 多源共振 + 社区热度 − 标题党 − 招聘/课程/活动。</div>
+<a class="top" href="/kb/">← 全部日期</a>
+%(blocks)s
+</div></body></html>""" % {
+        "today": TODAY, "total": total_in, "drop": sum(dropped.values()),
+        "keep": len(kept), "blocks": blocks,
+    }
+    (kb_html / (TODAY + ".html")).write_text(page, encoding="utf-8")
+
+    # 索引页
+    days = sorted([p.stem for p in kb_html.glob("20??-??-??.html")], reverse=True)
+    links = "".join('<div class="row"><div class="rt"><a href="/kb/%s">%s</a></div></div>'
+                    % (d, d) for d in days[:60])
+    idx = """<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>知识库 · 全部日期</title><style>
+body{margin:0;background:#0a0b0e;color:#eef1f7;font:16px/1.6 -apple-system,"PingFang SC",sans-serif;padding:24px 18px}
+.wrap{max-width:760px;margin:0 auto}
+h1{font-size:20px;margin:0 0 18px}
+.row{padding:13px 16px;background:#12141a;border-radius:14px;margin-bottom:8px}
+a{color:#eef1f7;text-decoration:none}a:hover{color:#6d8fff}
+.back{display:block;margin-top:18px;color:#6d8fff;font-size:13px}
+</style></head><body><div class="wrap"><h1>知识库 · 全部日期</h1>%(links)s
+<a class="back" href="/">← 回到今天的面板</a></div></body></html>""" % {"links": links}
+    (kb_html / "index.html").write_text(idx, encoding="utf-8")
+    return groups
+
+
+# ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
 def main():
@@ -1775,8 +2049,21 @@ def main():
         log("翻译失败，保留原文：%s" % e)
         tr_map = {}
 
+    # 过滤 + 沉淀知识库（覆盖全部候选，不只是要闻 12 条）
+    candidates = list(headlines) + [h for h in hn] + [r for r in reddit] + list(papers)
+    seen_titles = set()
+    uniq_pool = []
+    for it in candidates:
+        key = (it.get("title") or "")[:60].lower()
+        if key in seen_titles:
+            continue
+        seen_titles.add(key)
+        uniq_pool.append(it)
+    kept, dropped = filter_knowledge(uniq_pool, threshold=CONF.get("kb_threshold", 55))
+    kb_groups = write_knowledge(kept, dropped, headlines)
+
     page = render(headlines, aa, or_new, hn, reddit, gh, hf, ph, papers, zh, status,
-                  hot_cn=hot_cn, tr=tr_map)
+                  hot_cn=hot_cn, tr=tr_map, kb=kb_groups, kb_drop=dropped)
     for name in ("index.html", TODAY + ".html"):
         (OUT / name).write_text(page, encoding="utf-8")
 
@@ -1794,6 +2081,11 @@ def main():
         "zh": [_plain(z) for z in zh],
         "hot_cn": hot_cn,
         "translated": len(tr_map),
+        "knowledge": [
+            {"topic": it["topic"], "score": it.get("score"), "tags": it.get("tags"),
+             "title": it["title"], "url": it["url"], "source": it["source"]}
+            for it in kept],
+        "knowledge_dropped": dropped,
         "status": status,
         "elapsed": round(time.time() - t0, 1),
     }
@@ -1824,6 +2116,9 @@ def main():
               % (len(headlines), len(aa), len(hn) + len(reddit), len(hot_cn), len(gh),
                  len(hf), len(ph), len(papers)))
         print("   已翻译 %d 条外文标题" % len(tr_map))
+        print("   知识库：保留 %d 条，过滤 %d 条（垃圾 %d / 标题党 %d / 低价值 %d）"
+              % (len(kept), sum(dropped.values()), dropped["spam"],
+                 dropped["promo"], dropped["low"]))
         print("   源 %d/%d 成功，耗时 %.1fs" % (ok, len(status), time.time() - t0))
         for b in bad:
             print("   ⚠️  " + b)

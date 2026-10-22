@@ -67,7 +67,19 @@ RSS     http://192.168.31.189:8787/feed.xml
 
 ---
 
-## 三、为什么在手机上不卡
+## 三、怎么保证你不会忘（重要）
+
+一个要你主动打开的东西，三天后基本就死了。所以做了三层：
+
+1. **每天 08:00 和 20:30 弹一次系统通知** —— 带今天最重要的 3 条标题，不用打开就知道发生了什么
+2. **通知点一下就进面板**（需要给 terminal-notifier 通知权限，见下）
+3. **Dock 里常驻一个图标** —— Safari 打开面板 → 菜单栏「文件」→ **添加到程序坞**，
+   会生成一个真正的 App 窗口（独立、无地址栏），每天在程序坞里杵着，想不起来都难
+
+首次授权：系统设置 → 通知 → 找到 `terminal-notifier` → 允许。
+没授权也能弹，只是点了不会跳转（会走系统通知兜底）。
+
+## 四、为什么在手机上不卡
 
 | 之前的问题 | 现在 |
 | --- | --- |
@@ -80,7 +92,7 @@ RSS     http://192.168.31.189:8787/feed.xml
 
 首屏只剩 1 个请求、18.5KB，之后再打开基本是 0 字节。
 
-## 四、手机加入主屏（做成 App 图标）
+## 五、手机加入主屏（做成 App 图标）
 
 1. 手机连上和 Mac 同一个 Wi-Fi
 2. Safari 打开 `http://192.168.31.189:8787`
@@ -91,7 +103,7 @@ RSS     http://192.168.31.189:8787/feed.xml
 
 ---
 
-## 五、自动行为
+## 六、自动行为
 
 装了两个 launchd 用户级任务：
 
@@ -99,6 +111,7 @@ RSS     http://192.168.31.189:8787/feed.xml
 | --- | --- |
 | `com.dsh.aidaily.serve` | 常驻 HTTP 服务，端口 8787，挂了自动拉起 |
 | `com.dsh.aidaily.refresh` | 每小时抓一次，静默更新数据 |
+| `com.dsh.aidaily.notify` | 每天 08:00 / 20:30 弹通知提醒 |
 
 ```bash
 launchctl print gui/$(id -u)/com.dsh.aidaily.serve | head -12
@@ -110,7 +123,7 @@ bash uninstall.sh         # 全部停掉（文件保留）
 
 ---
 
-## 六、改哪里
+## 七、改哪里
 
 全部在 `config.json`，改完下一次刷新生效：
 
@@ -130,7 +143,7 @@ launchctl kickstart -k gui/$(id -u)/com.dsh.aidaily.serve
 
 ---
 
-## 七、不在同一 Wi-Fi 时
+## 八、不在同一 Wi-Fi 时
 
 当前只监听局域网（更安全，不外露）。要在外面也能看，二选一：
 
@@ -142,12 +155,26 @@ launchctl kickstart -k gui/$(id -u)/com.dsh.aidaily.serve
 
 ---
 
-## 八、结构
+## 九、从"自己用"到"能收费"
+
+代码已经按可进化来放，不是一次性脚本：
+
+- **本机版**（现在）：launchd 跑抓取 + 常驻服务 + 通知，零成本
+- **能发给朋友**：`.github/workflows/build.yml` 已配好，每小时在 GitHub 上构建一次，
+  产物是纯静态站点（268KB，无服务端依赖），丢到 Cloudflare Pages 就有公网 https 链接
+- **能收费**：付费点不在"看新闻"，在**按人订阅**（各自选源和主题）、推送、历史检索、导出
+
+商业化的硬门槛先记在这，别到时候被卡：$99/年开发者账号、iOS 审核指南 4.2
+（纯网页套壳会被拒，必须有推送/离线/订阅这类原生价值）、中国区上架需要 ICP 备案。
+
+## 十、结构
 
 ```
 ~/AI-Daily
 ├── bin/ai_daily.py     采集 + 排序 + 渲染（纯标准库，单文件）
 ├── bin/serve.py        常驻 HTTP 服务（端口 8787）
+├── bin/notify.py       每天一条通知提醒
+├── .github/workflows/  云端每小时构建（可接 Cloudflare Pages）
 ├── config.json         所有可调参数
 ├── output/             index.html / 每日存档 / feed.xml / sources.html / 图标
 ├── data/               每日结构化 JSON

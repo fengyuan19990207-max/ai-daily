@@ -73,16 +73,44 @@ cat > "$AGENTS/com.dsh.aidaily.refresh.plist" <<EOF
 </plist>
 EOF
 
+# ---------- 3. 每天 08:00 提醒 ----------
+cat > "$AGENTS/com.dsh.aidaily.notify.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.dsh.aidaily.notify</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$PY</string>
+        <string>$BASE/bin/notify.py</string>
+    </array>
+    <key>WorkingDirectory</key><string>$BASE</string>
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
+    </array>
+    <key>StandardOutPath</key><string>$BASE/logs/notify.out.log</string>
+    <key>StandardErrorPath</key><string>$BASE/logs/notify.err.log</string>
+    <key>EnvironmentVariables</key>
+    <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+    <key>ProcessType</key><string>Background</string>
+</dict>
+</plist>
+EOF
+
 # 清掉旧的「开机弹窗」任务，避免和常驻服务打架
 launchctl bootout "gui/$UID_NUM/com.dsh.aidaily" 2>/dev/null || true
 rm -f "$AGENTS/com.dsh.aidaily.plist"
 
-for L in serve refresh; do
+for L in serve refresh notify; do
   launchctl bootout "gui/$UID_NUM/com.dsh.aidaily.$L" 2>/dev/null || true
 done
 sleep 1
 launchctl bootstrap "gui/$UID_NUM" "$AGENTS/com.dsh.aidaily.serve.plist"
 launchctl bootstrap "gui/$UID_NUM" "$AGENTS/com.dsh.aidaily.refresh.plist"
+launchctl bootstrap "gui/$UID_NUM" "$AGENTS/com.dsh.aidaily.notify.plist"
 
 sleep 2
 echo ""
@@ -92,7 +120,7 @@ echo " 手机打开 : http://$LAN_IP:8787   （同一 Wi-Fi）"
 echo " RSS 订阅 : http://$LAN_IP:8787/feed.xml"
 echo ""
 echo " 手机加到主屏：Safari 打开上面的地址 → 分享 → 添加到主屏幕"
-echo " 数据每小时自动刷新；随时想看就刷新页面"
+echo " 数据每小时自动刷新；每天 08:00 / 20:30 弹一次通知提醒"
 echo ""
 echo " 状态：launchctl print gui/$UID_NUM/com.dsh.aidaily.serve | head -12"
 echo " 日志：$BASE/logs/"

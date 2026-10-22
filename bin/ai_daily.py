@@ -78,6 +78,17 @@ def _lan_ip():
 LAN_IP = _lan_ip()
 
 
+def _public_url():
+    try:
+        u = (STATE / "tunnel_url.txt").read_text().strip()
+        return u if u.startswith("https://") else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+PUBLIC_URL = _public_url()
+
+
 def log(msg):
     log_lines.append("[%s] %s" % (datetime.now().strftime("%H:%M:%S"), msg))
 
@@ -1557,7 +1568,8 @@ def render(headlines, aa, or_new, hn, reddit, gh, hf, ph, papers, zh, status,
 <footer>
   <div>数据源健康度<div class="srcstat">%(src)s</div></div>
   <div style="text-align:right;line-height:1.9">
-  常驻地址 <code>http://%(lan)s:8787</code> · <a href="/sources">数据源说明</a><br>
+  局域网 <code>http://%(lan)s:8787</code> · <a href="/sources">数据源说明</a><br>
+  公网 <code id="puburl">%(pub)s</code><br>
   手动刷新 <code>bash run-now.command</code><br>
   RSS <a href="/feed.xml">/feed.xml</a>（可丢进 Folo / FreshRSS）</div>
 </footer>
@@ -1569,6 +1581,13 @@ def render(headlines, aa, or_new, hn, reddit, gh, hf, ph, papers, zh, status,
   <a href="#s-tool" data-t="s-tool"><span class="i">🧰</span>工具</a>
 </div>
 <script>
+(function(){
+  var el=document.getElementById('puburl');
+  if(!el) return;
+  fetch('/api/tunnel').then(function(r){return r.json()}).then(function(d){
+    if(d && d.url) el.textContent=d.url;
+  }).catch(function(){});
+})();
 var q=document.getElementById('q');
 q.addEventListener('input',function(){
   var v=q.value.toLowerCase().trim();
@@ -1615,6 +1634,7 @@ q.addEventListener('input',function(){
         "c_paper": card("今日值得扫一眼的论文", paper_html),
         "src": src,
         "lan": LAN_IP,
+        "pub": PUBLIC_URL or "未启用（手机用流量看需要它）",
         "nav": nav,
         "c_hotcn": hot_html,
     }

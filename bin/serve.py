@@ -169,6 +169,15 @@ class Handler(BaseHTTPRequestHandler):
                 name = "icon-192.png"
             return self.send_file(OUT / name, cache="max-age=86400")
 
+        if path == "/api/tunnel":
+            try:
+                u = (BASE / "state" / "tunnel_url.txt").read_text().strip()
+            except Exception:  # noqa: BLE001
+                u = ""
+            body = json.dumps({"url": u if u.startswith("https://") else ""},
+                              ensure_ascii=False).encode()
+            return self.send_bytes(body, "application/json; charset=utf-8")
+
         if path == "/health":
             return self.send_bytes(b'{"ok":true}', "application/json")
 

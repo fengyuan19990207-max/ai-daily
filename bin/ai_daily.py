@@ -21,6 +21,7 @@ AI 情报日报 / AI Daily Intelligence
 
 import gzip
 import html
+import os
 import json
 import re
 import subprocess
@@ -976,6 +977,138 @@ def translate_titles(titles):
 
 
 # ---------------------------------------------------------------------------
+# 大模型打分 + 翻译（读你机器上已有的凭据，不写进项目）
+# ---------------------------------------------------------------------------
+LLM_CFG = CONF.get("llm") or {}
+LLM_CACHE = STATE / "llm_cache.json"
+
+
+def _llm_key():
+    """优先环境变量，其次从 ~/.dsh/.env 读（凭据不进项目目录）。"""
+    env_name = LLM_CFG.get("api_key_env") or ""
+    if env_name and os.environ.get(env_name):
+        return os.environ[env_name]
+    path = os.path.expanduser(LLM_CFG.get("env_file") or "~/.dsh/.env")
+    try:
+        for line in open(path, encoding="utf-8", errors="ignore"):
+            if "=" in line and not line.strip().startswith("#"):
+                k, v = line.split("=", 1)
+                if k.strip() == env_name:
+                    return v.strip().strip('"').strip("'")
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+def _load_llm_cache():
+    try:
+        return json.loads(LLM_CACHE.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _save_llm_cache(c):
+    try:
+        LLM_CACHE.write_text(json.dumps(c, ensure_ascii=False), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+LLM_PROMPT = (
+    "你是 AI 情报筛选助手，服务对象是关注前沿 AI 与工具的技术人。\n"
+    "对每条标题输出一个对象：\n"
+    "  score：0-100，价值分。新模型/新工具/评测/开源进展/算力突破 = 高分；"
+    "股价、IPO 八卦、玩笑段子、灌水、招聘课程、纯财经 = 低分（<40）。\n"
+    "  topic：model/bench/tool/paper/oss/infra/biz/policy/other 之一。\n"
+    "  zh：30 字内中文标题，模型名/公司名/产品名保留英文原文。\n"
+    "只输出 JSON 数组，形如 [{\"i\":0,\"score\":85,\"topic\":\"model\",\"zh\":\"...\"}]"
+    "，不要任何解释、不要代码块围栏。\n"
+)
+
+
+def _llm_chat(payload_text):
+    key = _llm_key()
+    if not key or not LLM_CFG.get("base_url"):
+        return None
+    style = LLM_CFG.get("style", "anthropic")
+    base = LLM_CFG["base_url"]
+    model = LLM_CFG.get("model", "")
+    if style == "anthropic":
+        body = json.dumps({
+            "model": model, "max_tokens": 3000, "temperature": 0,
+            "messages": [{"role": "user", "content": payload_text}],
+        }).encode()
+        headers = {"x-api-key": key, "anthropic-version": "2023-06-01",
+                   "content-type": "application/json"}
+    else:
+        body = json.dumps({
+            "model": model, "temperature": 0,
+            "messages": [{"role": "user", "content": payload_text}],
+        }).encode()
+        headers = {"Authorization": "Bearer " + key,
+                   "Content-Type": "application/json"}
+    try:
+        req = urllib.request.Request(base, data=body, headers=headers)
+        with urllib.request.urlopen(req, timeout=120) as r:
+            d = json.loads(r.read().decode("utf-8", "ignore"))
+        if style == "anthropic":
+            txt = "".join(b.get("text", "") for b in d.get("content", []))
+        else:
+            txt = d["choices"][0]["message"]["content"]
+        return txt
+    except Exception as e:  # noqa: BLE001
+        log("模型调用失败：%s" % e)
+        return None
+
+
+def _parse_json_array(txt):
+    if not txt:
+        return None
+    t = txt.strip()
+    t = re.sub(r"^```(?:json)?|```$", "", t, flags=re.M).strip()
+    i, j = t.find("["), t.rfind("]")
+    if i < 0 or j <= i:
+        return None
+    try:
+        return json.loads(t[i:j + 1])
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def llm_enrich(titles, batch=18):
+    """批量拿 分数/主题/中文标题，带磁盘缓存。返回 {title: {...}}"""
+    if not LLM_CFG.get("enabled"):
+        return {}
+    cache = _load_llm_cache()
+    need = [t for t in dict.fromkeys(titles) if t and t not in cache]
+    # 省钱：新条目少于 6 条、且不是早上 8 点那一轮，就先不调模型，等攒够了再批量
+    if need and len(need) < 6 and datetime.now().hour not in (8, 20):
+        need = []
+    if need:
+        for start in range(0, min(len(need), batch * 3), batch):
+            chunk = need[start:start + batch]
+            payload = LLM_PROMPT + json.dumps(
+                [{"i": i, "title": t} for i, t in enumerate(chunk)], ensure_ascii=False)
+            data = _parse_json_array(_llm_chat(payload))
+            if not data:
+                continue
+            for row in data:
+                try:
+                    i = int(row.get("i"))
+                    if not (0 <= i < len(chunk)):
+                        continue
+                    cache[chunk[i]] = {
+                        "score": max(0, min(100, int(row.get("score") or 0))),
+                        "topic": str(row.get("topic") or "other"),
+                        "zh": str(row.get("zh") or "").strip(),
+                    }
+                except Exception:  # noqa: BLE001
+                    continue
+            _save_llm_cache(cache)
+    return {t: cache[t] for t in titles if t in cache}
+
+
+# ---------------------------------------------------------------------------
 # 排序与筛选
 # ---------------------------------------------------------------------------
 def build_headlines(feed_items, hn_items, reddit_items):
@@ -1847,7 +1980,7 @@ def filter_knowledge(items, threshold=55.0, max_paper=2, per_topic=4):
         if any(k in t for k in SPAM_KW):
             dropped["spam"] += 1
             continue
-        sc = quality(it)
+        sc = (it.get("llm_score") if it.get("llm_score") is not None else quality(it))
         if sc < threshold:
             if any(k in t for k in PROMO_KW):
                 dropped["promo"] += 1
@@ -1856,7 +1989,10 @@ def filter_knowledge(items, threshold=55.0, max_paper=2, per_topic=4):
             continue
         it = dict(it)
         it["score"] = round(sc)
-        it["topic"] = classify(it.get("title") + " " + it.get("summary"))
+        it["topic"] = it.get("llm_topic") or classify(
+            (it.get("title") or "") + " " + (it.get("summary") or ""))
+        if it["topic"] not in TOPIC_LABEL:
+            it["topic"] = "other"
         it["tags"] = []
         if len(it.get("sources") or []) > 1:
             it["tags"].append("多源共振")
@@ -2039,27 +2175,52 @@ def main():
 
     hot_cn = results.get("hotcn", [])
 
-    # 只翻译外文标题，已翻过的走本地缓存
-    want_titles = ([h["title"] for h in headlines] + [h["title"] for h in hn]
-                   + [r["title"] for r in reddit] + [p["title"] for p in ph]
-                   + [p["title"] for p in papers])
-    try:
-        tr_map = translate_titles(want_titles)
-    except Exception as e:  # noqa: BLE001
-        log("翻译失败，保留原文：%s" % e)
-        tr_map = {}
-
-    # 过滤 + 沉淀知识库（覆盖全部候选，不只是要闻 12 条）
-    candidates = list(headlines) + [h for h in hn] + [r for r in reddit] + list(papers)
-    seen_titles = set()
-    uniq_pool = []
+    # 候选池（要闻 + 社区 + 论文），先交给模型打分/翻译，再过滤
+    candidates = list(headlines) + list(hn) + list(reddit) + list(papers)
+    seen_titles, uniq_pool = set(), []
     for it in candidates:
         key = (it.get("title") or "")[:60].lower()
         if key in seen_titles:
             continue
         seen_titles.add(key)
         uniq_pool.append(it)
-    kept, dropped = filter_knowledge(uniq_pool, threshold=CONF.get("kb_threshold", 55))
+
+    want_titles = ([h["title"] for h in headlines] + [h["title"] for h in hn]
+                   + [r["title"] for r in reddit] + [p["title"] for p in ph]
+                   + [p["title"] for p in papers])
+    enrich = llm_enrich(list(dict.fromkeys(
+        [it.get("title") for it in uniq_pool] + list(want_titles))))
+    for it in uniq_pool:
+        e = enrich.get(it.get("title") or "")
+        if e:
+            it["llm_score"] = e["score"]
+            it["llm_topic"] = e["topic"]
+
+    # 要闻也按模型分重排（论文不进要闻，避免压过新闻）
+    if enrich:
+        pool_h = [it for it in uniq_pool
+                  if it.get("llm_score") is not None and it.get("source_id") != "arxiv"]
+        if pool_h:
+            pool_h.sort(key=lambda x: (-x["llm_score"], -(x.get("score") or 0)))
+            headlines = []
+            for it in pool_h[: CONF["max_headlines"]]:
+                it = dict(it)
+                it.setdefault("sources", {it.get("source", "")})
+                headlines.append(it)
+
+    # 模型给的中文标题优先，机翻兜底
+    tr_map = {}
+    for t in want_titles:
+        e = enrich.get(t or "")
+        if e and e.get("zh") and has_cjk(e["zh"]):
+            tr_map[t] = e["zh"]
+    try:
+        tr_map.update({k: v for k, v in translate_titles(want_titles).items()
+                       if k not in tr_map})
+    except Exception as e:  # noqa: BLE001
+        log("翻译失败，保留原文：%s" % e)
+
+    kept, dropped = filter_knowledge(uniq_pool, threshold=CONF.get("kb_threshold", 58))
     kb_groups = write_knowledge(kept, dropped, headlines)
 
     page = render(headlines, aa, or_new, hn, reddit, gh, hf, ph, papers, zh, status,
@@ -2116,6 +2277,7 @@ def main():
               % (len(headlines), len(aa), len(hn) + len(reddit), len(hot_cn), len(gh),
                  len(hf), len(ph), len(papers)))
         print("   已翻译 %d 条外文标题" % len(tr_map))
+        print("   模型打分：%d 条（%s）" % (len(enrich), LLM_CFG.get("model", "") or "未启用"))
         print("   知识库：保留 %d 条，过滤 %d 条（垃圾 %d / 标题党 %d / 低价值 %d）"
               % (len(kept), sum(dropped.values()), dropped["spam"],
                  dropped["promo"], dropped["low"]))

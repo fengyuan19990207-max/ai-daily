@@ -350,5 +350,14 @@
     "model": "",
     "base_url": "",
     "_note": "留空则用免费机翻（Google/MyMemory）。填 deepseek 或 openai 兼容端点可显著提升质量。"
-  }
+  },
+  "llm": {
+    "enabled": true,
+    "style": "anthropic",
+    "base_url": "https://api.yoshub.com/v1/messages",
+    "model": "claude-haiku-4-5-20251001",
+    "api_key_env": "YOUHUB_API_KEY",
+    "env_file": "~/.dsh/.env"
+  },
+  "kb_threshold": 58
 }

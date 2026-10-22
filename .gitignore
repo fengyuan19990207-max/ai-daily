@@ -1,0 +1,12 @@
+# 生成产物（每次运行重建，不进版本库）
+output/
+data/
+logs/
+state/
+*.log
+
+# 本地环境
+.venv/
+__pycache__/
+*.pyc
+.DS_Store

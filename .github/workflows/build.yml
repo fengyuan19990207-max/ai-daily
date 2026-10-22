@@ -1,0 +1,37 @@
+name: build-site
+
+# 每小时构建一次；也可以手动触发
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 抓取并生成
+        run: python bin/ai_daily.py --quiet
+
+      - name: 上传产物（可直接丢给任何静态托管）
+        uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: output/
+          retention-days: 7
+
+      # 将来要公开访问时，取消注释并配好仓库 Secrets：
+      #   CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID / CF_PAGES_PROJECT
+      # - name: 部署到 Cloudflare Pages
+      #   uses: cloudflare/wrangler-action@v3
+      #   with:
+      #     apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      #     accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      #     command: pages deploy output --project-name=${{ secrets.CF_PAGES_PROJECT }}

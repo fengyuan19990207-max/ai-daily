@@ -79,6 +79,9 @@ def _lan_ip():
 LAN_IP = _lan_ip()
 
 
+CLOUD_MODE = bool(os.environ.get("AI_DAILY_CLOUD"))
+
+
 def _public_url():
     try:
         u = (STATE / "tunnel_url.txt").read_text().strip()
@@ -1742,7 +1745,7 @@ def render(headlines, aa, or_new, hn, reddit, gh, hf, ph, papers, zh, status,
 <footer>
   <div>数据源健康度<div class="srcstat">%(src)s</div></div>
   <div style="text-align:right;line-height:1.9">
-  局域网 <code>http://%(lan)s:8787</code> · <a href="/sources">数据源说明</a><br>
+  %(envline)s <a href="/sources">数据源说明</a><br>
   公网 <code id="puburl">%(pub)s</code><br>
   手动刷新 <code>bash run-now.command</code><br>
   RSS <a href="/feed.xml">/feed.xml</a>（可丢进 Folo / FreshRSS）</div>
@@ -1825,6 +1828,8 @@ q.addEventListener('input',function(){
         "c_paper": card("今日值得扫一眼的论文", paper_html),
         "src": src,
         "lan": LAN_IP,
+        "envline": ("云端部署 · 每小时自动构建" if CLOUD_MODE
+                    else "局域网 <code>http://%s:8787</code>" % LAN_IP),
         "pub": PUBLIC_URL or "未启用（手机用流量看需要它）",
         "nav": nav,
         "kb_card": kb_html,

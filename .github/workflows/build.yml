@@ -1,15 +1,17 @@
 name: build-site
 
-# 每小时构建一次；也可以手动触发
 on:
   schedule:
-    - cron: "7 * * * *"
+    - cron: "17 * * * *"      # 每小时 17 分构建一次
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -17,21 +19,21 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 抓取并生成
+      - name: 抓取 + 过滤 + 生成
+        env:
+          YOUHUB_API_KEY: ${{ secrets.YOUHUB_API_KEY }}
+          AI_DAILY_CLOUD: "1"
         run: python bin/ai_daily.py --quiet
 
-      - name: 上传产物（可直接丢给任何静态托管）
-        uses: actions/upload-artifact@v4
-        with:
-          name: site
-          path: output/
-          retention-days: 7
+      - name: 补静态路由（/sources、/kb/）
+        run: |
+          mkdir -p output/sources output/kb
+          cp -f output/sources.html output/sources/index.html 2>/dev/null || true
 
-      # 将来要公开访问时，取消注释并配好仓库 Secrets：
-      #   CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID / CF_PAGES_PROJECT
-      # - name: 部署到 Cloudflare Pages
-      #   uses: cloudflare/wrangler-action@v3
-      #   with:
-      #     apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      #     accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      #     command: pages deploy output --project-name=${{ secrets.CF_PAGES_PROJECT }}
+      - name: 发布到 gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./output
+          publish_branch: gh-pages
+          force_orphan: true

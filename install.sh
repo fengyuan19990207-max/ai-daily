@@ -105,9 +105,14 @@ EOF
 #   http://<设备名>.<tailnet>.ts.net:8787
 # 想用 https（可装成 PWA）需在 https://login.tailscale.com/admin/dns 打开 HTTPS Certificates
 if [ -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ]; then
+  # HTTPS 反代（需要后台开 HTTPS Certificates），幂等
+  /Applications/Tailscale.app/Contents/MacOS/Tailscale serve --bg 8787 >/dev/null 2>&1 || true
   TS_IP="$(/Applications/Tailscale.app/Contents/MacOS/Tailscale ip -4 2>/dev/null | head -1)"
   if [ -n "$TS_IP" ]; then
-    printf 'http://%s:8787\n' "$(hostname -s | tr 'A-Z' 'a-z')" > "$BASE/state/tunnel_url.txt"
+    HOSTNAME_TS="$(/Applications/Tailscale.app/Contents/MacOS/Tailscale status --json 2>/dev/null | sed -n 's/.*"DNSName":"\([^"]*\)\..*/\1/p' | head -1)"
+    if [ -n "$HOSTNAME_TS" ]; then
+      printf 'https://%s.tail630576.ts.net\n' "$HOSTNAME_TS" > "$BASE/state/tunnel_url.txt"
+    fi
   fi
 fi
 

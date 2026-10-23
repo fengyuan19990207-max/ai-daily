@@ -1272,6 +1272,10 @@ h1 em{font-style:normal;background:linear-gradient(100deg,#7f9dff,#3ddc97);
 .stat .d{font-size:11px;color:var(--dim2);margin-top:2px}
 
 /* 搜索 */
+#install{background:linear-gradient(90deg,rgba(109,143,255,.16),rgba(61,220,151,.12));
+  border:1px solid rgba(109,143,255,.35);border-radius:12px;padding:10px 13px;
+  font-size:12.5px;color:#c8d4ee;margin:0 0 12px;line-height:1.5}
+#install b{color:#fff}
 input#q{width:100%;background:var(--card);border:1px solid transparent;color:var(--fg);
   border-radius:14px;padding:12px 15px;font-size:15px;outline:none;margin:0 0 22px;
   -webkit-appearance:none}
@@ -1694,6 +1698,9 @@ def render(headlines, aa, or_new, hn, reddit, gh, hf, ph, papers, zh, status,
   <div class="stamp">生成于 <b>%(hhmm)s</b><br>社区榜单 / 官方发布 / 模型评测<br>数据每小时自动更新</div>
 </header>
 %(stats)s
+<div id="install" style="display:none">
+  📱 想让它在主屏上像个 App？点底部 <b>分享</b> → <b>添加到主屏幕</b>，以后点图标直接进（点本行关闭提示）
+</div>
 <input id="q" placeholder="筛选：模型名 / 公司 / 关键词…">
 %(nav)s
 
@@ -1749,6 +1756,22 @@ def render(headlines, aa, or_new, hn, reddit, gh, hf, ph, papers, zh, status,
   <a href="#s-tool" data-t="s-tool"><span class="i">🧰</span>工具</a>
 </div>
 <script>
+/* 已装到主屏就不再提示 */
+(function(){
+  var standalone = window.navigator.standalone === true ||
+    window.matchMedia('(display-mode: standalone)').matches;
+  var bar = document.getElementById('install');
+  if (bar && !standalone && /iPhone|iPad|iPod/i.test(navigator.userAgent)) bar.style.display = 'block';
+  if (bar) bar.addEventListener('click', function(){ bar.style.display = 'none'; });
+})();
+
+/* 离线缓存（需要 https） */
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('/sw.js').catch(function(){});
+  });
+}
+
 (function(){
   var el=document.getElementById('puburl');
   if(!el) return;

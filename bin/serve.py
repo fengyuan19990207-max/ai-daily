@@ -156,6 +156,9 @@ class Handler(BaseHTTPRequestHandler):
                               ensure_ascii=False).encode()
             return self.send_bytes(body, "application/json; charset=utf-8")
 
+        if path == "/sw.js":
+            return self.send_file(OUT / "sw.js", cache="no-cache")
+
         if path == "/feed.xml":
             return self.send_file(OUT / "feed.xml", cache="max-age=600")
 

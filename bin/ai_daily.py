@@ -82,7 +82,7 @@ LAN_IP = _lan_ip()
 def _public_url():
     try:
         u = (STATE / "tunnel_url.txt").read_text().strip()
-        return u if u.startswith("https://") else ""
+        return u if u.startswith(("http://", "https://")) else ""
     except Exception:  # noqa: BLE001
         return ""
 
@@ -2230,7 +2230,7 @@ def main():
 
     snapshot = {
         "generated_at": NOW.isoformat(),
-        "headlines": [_plain(h) for h in headlines],
+        "headlines": [dict(_plain(h), zh=tr_map.get(h["title"], "")) for h in headlines],
         "models": aa,
         "openrouter_new": [_plain(m) for m in or_new],
         "hn": [_plain(h) for h in hn],
@@ -2244,7 +2244,8 @@ def main():
         "translated": len(tr_map),
         "knowledge": [
             {"topic": it["topic"], "score": it.get("score"), "tags": it.get("tags"),
-             "title": it["title"], "url": it["url"], "source": it["source"]}
+             "title": it["title"], "url": it["url"], "source": it["source"],
+             "zh": tr_map.get(it["title"], "")}
             for it in kept],
         "knowledge_dropped": dropped,
         "status": status,

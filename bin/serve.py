@@ -184,7 +184,7 @@ class Handler(BaseHTTPRequestHandler):
                 u = (BASE / "state" / "tunnel_url.txt").read_text().strip()
             except Exception:  # noqa: BLE001
                 u = ""
-            body = json.dumps({"url": u if u.startswith("https://") else ""},
+            body = json.dumps({"url": u if u.startswith(("http://", "https://")) else ""},
                               ensure_ascii=False).encode()
             return self.send_bytes(body, "application/json; charset=utf-8")
 

@@ -6,7 +6,7 @@
 ```
 电脑    http://127.0.0.1:8787
 手机    http://192.168.31.189:8787      ← 同一 Wi-Fi
-公网    https://<随机>.trycloudflare.com   ← 用手机流量也能开（见页面底部「公网」）
+手机     http://ai-daily.tail630576.ts.net:8787  ← 任何网络（4G/公司网）都能开，需手机装 Tailscale
 RSS     http://192.168.31.189:8787/feed.xml
 源说明  http://192.168.31.189:8787/sources
 ```
@@ -144,7 +144,20 @@ launchctl kickstart -k gui/$(id -u)/com.dsh.aidaily.serve
 
 ---
 
-## 八、手机用流量（公网访问）
+## 八、手机用流量（Tailscale 内网）
+
+已经用 **Tailscale** 替代了 Cloudflare 临时隧道：
+
+- 地址：`http://ai-daily.tail630576.ts.net:8787`（固定不变，只有你自己的设备能访问）
+- 手机装 Tailscale 并登录同一账号即可，不需要在同一个 Wi-Fi
+- 实测本机往返 **8ms**（Cloudflare 隧道约 1.5s）
+- 免费版：Personal 套餐 $0 永久，个人非商业用途，不用绑卡
+
+想要 `https://`（可以装成 PWA、离线、收推送）：去
+<https://login.tailscale.com/admin/dns> 打开 **HTTPS Certificates**，然后
+`tailscale serve --bg 8787`，地址就变成 `https://ai-daily.tail630576.ts.net`。
+
+## 九、旧的 Cloudflare 隧道（已停用）
 
 已接好 Cloudflare 隧道：`com.dsh.aidaily.tunnel` 常驻跑 `cloudflared`，把本机 8787 端口
 映射成一个 https 公网地址。手机在 4G/公司网络都能打开，实测首屏 1-2 秒。
